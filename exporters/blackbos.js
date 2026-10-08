@@ -7,11 +7,6 @@ const PAGE_URL = "https://www.ip138.com/gold/";
 const SHOPS = ["周大福", "六福珠宝", "周生生"];
 const MARKETS = ["国际黄金现货", "国际白银现货", "上海黄金现货", "上海白银现货"];
 
-const DEFAULT_HEADERS = {
-  "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
-  "Referer": "https://www.google.com/",
-};
-
 function toNum(v) {
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
@@ -41,14 +36,7 @@ function pctText(v) {
 // 封装 Surge $httpClient.get 为 Promise
 function httpGet(options) {
   return new Promise((resolve, reject) => {
-    const opts = {
-      ...options,
-      headers: {
-        ...DEFAULT_HEADERS,
-        ...(options.headers || {}),
-      },
-    };
-    $httpClient.get(opts, (error, response, data) => {
+    $httpClient.get(options, (error, response, data) => {
       if (error) {
         reject(error);
       } else {
@@ -95,16 +83,35 @@ function parseMarketsCnyPerGram(html) {
   return out;
 }
 
-// 获取USD/CNH汇率（双重源保障：首选新浪，备选东方财富）
+// 获取 USD/CNH 离岸人民币汇率（三重源保障）
 async function fetchUsdCnh() {
-  // 1. 尝试新浪财经 API
+  // 源 1：腾讯财经 (最稳定)
   try {
-    const url = "https://hq.sinajs.cn/list=fx_susdcnc";
-    const data = await httpGet({
-      url: url,
-      timeout: 8,
-      headers: { "Referer": "https://finance.sina.com.cn/" },
-    });
+    const data = await httpGet({ url: "https://qt.gtimg.cn/q=usdcnh", timeout: 5 });
+    const parts = data.split("~");
+    if (parts && parts.length > 3) {
+      const rate = toNum(parts[3]);
+      if (rate && rate > 0) return rate;
+    }
+  } catch (e) {
+    console.log("【贵金属】腾讯汇率源失败: " + e);
+  }
+
+  // 源 2：网易财经
+  try {
+    const data = await httpGet({ url: "https://api.money.126.net/data/feed/FX_USDCNH", timeout: 5 });
+    const match = data.match(/\"price\":\s*([\d.]+)/);
+    if (match && match[1]) {
+      const rate = toNum(match[1]);
+      if (rate && rate > 0) return rate;
+    }
+  } catch (e) {
+    console.log("【贵金属】网易汇率源失败: " + e);
+  }
+
+  // 源 3：新浪财经
+  try {
+    const data = await httpGet({ url: "https://hq.sinajs.cn/list=fx_susdcnc", timeout: 5 });
     const match = data.match(/="([^"]+)"/);
     if (match && match[1]) {
       const parts = match[1].split(",");
@@ -112,36 +119,17 @@ async function fetchUsdCnh() {
       if (rate && rate > 0) return rate;
     }
   } catch (e) {
-    console.log("【贵金属】新浪汇率获取失败，尝试备用源: " + e);
-  }
-
-  // 2. 备用源：东方财富 API
-  try {
-    const u = "https://push2.eastmoney.com/api/qt/stock/get?secid=133.USDCNH&fields=f43";
-    const data = await httpGet({
-      url: u,
-      timeout: 8,
-      headers: { "Referer": "https://quote.eastmoney.com/" },
-    });
-    const j = JSON.parse(data);
-    const raw = j && j.data ? toNum(j.data.f43) : null;
-    if (raw !== null) return raw / 10000;
-  } catch (e) {
-    console.log("【贵金属】东方财富汇率获取失败: " + e);
+    console.log("【贵金属】新浪汇率源失败: " + e);
   }
 
   return null;
 }
 
 async function fetchIntlGoldAvg30Cny(usdcnh) {
+  if (usdcnh === null) return null;
   try {
-    if (usdcnh === null) return null;
     const url = "https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=122.XAU&klt=101&fqt=0&lmt=30&end=20500101&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57,f58";
-    const data = await httpGet({
-      url,
-      timeout: 10,
-      headers: { "Referer": "https://quote.eastmoney.com/" },
-    });
+    const data = await httpGet({ url, timeout: 8 });
     const j = JSON.parse(data);
     const lines = j && j.data && j.data.klines ? j.data.klines : null;
     if (!lines || lines.length === 0) return null;
@@ -169,12 +157,12 @@ async function fetchIntlGoldAvg30Cny(usdcnh) {
       url: PAGE_URL,
       timeout: 10,
       headers: {
-        "Referer": "https://www.ip138.com/",
+        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15",
       },
     });
 
     if (!html || html.length < 500) {
-      $notification.post("贵金属行情通知", "获取失败", "网页数据获取异常或为空");
+      $notification.post("贵金属行情通知", "获取失败", "IP138网页获取失败");
       return;
     }
 
