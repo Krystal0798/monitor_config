@@ -3,7 +3,7 @@
  * 适用环境: Surge / Loon / Quantumult X / Shadowrocket
  */
 
-const baseURL = 'https://missav.ws'
+const baseURL = 'https://missav.ai/dm339'
 const categoryPath = '/cn/new'
 
 const headers = {
