@@ -1,9 +1,9 @@
 /*
- * 脚本名称: MissAV 随机推荐通知 (增强版)
+ * 脚本名称: MissAV 随机推荐通知 (支持点击直接跳转)
  * 适用环境: Surge / Loon / Quantumult X / Shadowrocket
  */
 
-const baseURL = 'https://missav.ws' // 若网址更换，在此修改域名
+const baseURL = 'https://missav.ws'
 const categoryPath = '/cn/new'
 
 const headers = {
@@ -39,8 +39,6 @@ async function getVedioInfo() {
         }
 
         let list = []
-
-        // 宽泛匹配所有带有 /cn/ 的链接及标题
         const linkRegex = /href="(https:\/\/missav\.ws\/cn\/[a-zA-Z0-9-]+)"[^>]*>([\s\S]*?)<\/a>/g
         let match
 
@@ -48,14 +46,11 @@ async function getVedioInfo() {
             const link = match[1]
             const content = match[2]
             
-            // 过滤非视频卡片链接
             if (link.includes('/cn/new') || link.includes('/cn/popular') || link.includes('/cn/actresses')) {
                 continue
             }
 
-            // 匹配标题
             const titleMatch = content.match(/alt="([^"]+)"/) || content.match(/class="[^"]*text-sm[^"]*"[^>]*>([^<]+)</)
-            // 匹配封面
             const imgMatch = content.match(/data-src="([^"]+)"/) || content.match(/src="([^"]+)"/)
 
             const title = titleMatch ? titleMatch[1].trim() : ''
@@ -66,7 +61,6 @@ async function getVedioInfo() {
             }
         }
 
-        // 兜底正则
         if (list.length === 0) {
             console.log('⚠️ 尝试二级解析模式...')
             const altRegex = /alt="([^"]+)"[^>]*href="([^"]+)"/g
@@ -79,7 +73,6 @@ async function getVedioInfo() {
             throw new Error('未能解析出有效视频，请检查代理节点是否正常访问该网站')
         }
 
-        // 去重
         const uniqueList = Array.from(new Set(list.map(a => a.link)))
             .map(link => list.find(a => a.link === link))
 
@@ -92,16 +85,19 @@ async function getVedioInfo() {
     }
 }
 
+// 核心优化：发送支持点击直接跳转的通知
 function sendNotification(title, subTitle, content, link, thumb) {
     const opts = {
-        'open-url': link,
-        'media-url': thumb,
-        'auto-dismiss': 300
+        'open-url': link,      // 点击通知时打开的网页链接
+        'media-url': thumb,    // 封面预览图
+        'auto-dismiss': 300    // 5分钟后自动消失
     }
 
     if (typeof $notification !== 'undefined') {
+        // Surge / Stash / Shadowrocket 专属通知参数绑定
         $notification.post(title, subTitle, content, opts)
     } else if (typeof $msg !== 'undefined') {
+        // Quantumult X / Loon
         $msg(title, subTitle, content, opts)
     }
 }
@@ -109,8 +105,8 @@ function sendNotification(title, subTitle, content, link, thumb) {
 ;(() => {
     getVedioInfo().then(item => {
         const fullLink = item.link.startsWith('http') ? item.link : baseURL + item.link
-        const subTitle = '🎬 点击直达观看'
-        const content = `标题: ${item.title}\n链接: ${fullLink}`
+        const subTitle = '🎬 点击此通知直接跳转观看'
+        const content = `标题: ${item.title}`
         
         console.log(`✅ 成功获取: ${item.title}`)
         sendNotification('𝐌𝐢𝐬𝐬𝐀𝐕 推荐', subTitle, content, fullLink, item.thumb)
